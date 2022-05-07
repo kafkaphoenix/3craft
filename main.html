@@ -60,7 +60,11 @@
                 new THREE.MeshBasicMaterial({map : loader.load("assets/textures/dirt-face.jpg")}),
             ];
 
+            const BLOCK_SIZE = 5;
+            const RENDER_DISTANCE = 3;
+            const CHUNK_SIZE = 16;
             class Block {
+                
                 constructor(x, y, z) {
                     this.x = x;
                     this.y = y;
@@ -68,12 +72,12 @@
                 }
 
                 display() {
-                    const blockBox = new THREE.BoxBufferGeometry(5, 5, 5); // w, h, d
+                    const blockBox = new THREE.BoxBufferGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE); // w, h, d
                     //const blockMesh = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
                     const block = new THREE.Mesh(blockBox, materialArray);
                     scene.add(block);
                     block.position.x = this.x;
-                    block.position.y = this.y - 10;
+                    block.position.y = this.y - 10; //camera height
                     block.position.z = this.z;
 
                     const edges = new THREE.EdgesGeometry(blockBox);
@@ -83,34 +87,47 @@
                     );
                     scene.add(line);
                     line.position.x = this.x;
-                    line.position.y = this.y - 10;
+                    line.position.y = this.y - 10; //camera height
                     line.position.z = this.z;
                 }
             }
 
-            function generate(nblocks) {
-                var blocks = [];
+            function generate() {
+                var chunks = [];
                 var xoff = 0;
                 var zoff = 0;
                 var inc = 0.05;
-                var amplitude = 50;
-                for (var x = 0; x < nblocks; ++x) {
-                    xoff = 0;
-                    for (var z = 0; z < nblocks; ++z) {
-                        var y = Math.round(noise.perlin2(xoff, zoff) * amplitude / 5) * 5;
-                        blocks.push(new Block(x * 5, y, z * 5))
-                        xoff += inc;
+                var amplitude = 30 + Math.random() * 70;
+                var chunk = [];
+                //center the camera
+                camera.position.x = RENDER_DISTANCE * CHUNK_SIZE / 2 * BLOCK_SIZE;
+                camera.position.z = RENDER_DISTANCE * CHUNK_SIZE / 2 * BLOCK_SIZE;
+                camera.position.y = 50;
+                for (var i = 0; i < RENDER_DISTANCE; ++i) {
+                    for (var j = 0; j < RENDER_DISTANCE; ++j) {
+                        chunk = [];
+                        for (var x = i * CHUNK_SIZE; x < i * CHUNK_SIZE + CHUNK_SIZE; ++x) {
+                            for (var z = j * CHUNK_SIZE; z < j * CHUNK_SIZE + CHUNK_SIZE; ++z) {
+                                xoff = inc * x;
+                                zoff = inc * z;
+                                var y = Math.round(noise.perlin2(xoff, zoff) * amplitude / BLOCK_SIZE) * BLOCK_SIZE;
+                                chunk.push(new Block(x * BLOCK_SIZE, y, z * BLOCK_SIZE));
+                            }
+                        }
+                        chunks.push(chunk);
                     }
-                    zoff += inc;
                 }
 
-                return blocks;
+                for (var chunk = 0; chunk < chunks.length; ++chunk) {
+                    for (var block = 0; block < chunks[chunk].length; ++block) {
+                        chunks[chunk][block].display();
+                    }
+                }
+
+                return chunks;
             }
 
-            terrain = generate(20);
-            for (var block = 0; block < terrain.length; ++block) {
-                terrain[block].display();
-            }
+            terrain = generate();
 
             function render() {
                 renderer.render(scene, camera);
@@ -150,13 +167,15 @@
                 if (keys.includes("w")) {
                     controls.moveForward(movingSpeed);
                     if (!autoJump) {
-                        for (var block = 0; block < terrain.length; ++block) {
-                            if (camera.position.x <= terrain[block].x + 2.5 && 
-                                camera.position.x >= terrain[block].x - 2.5 && 
-                                camera.position.z <= terrain[block].z + 2.5 && 
-                                camera.position.z >= terrain[block].z - 2.5) {
-                                if (camera.position.y <= terrain[block].y - 2.5) {
-                                    controls.moveForward(-1 * movingSpeed);
+                        for (var chunk = 0; chunk < terrain.length; ++chunk) {
+                            for (var block = 0; block < terrain[chunk].length; ++block) {
+                                if (camera.position.x <= terrain[chunk][block].x + BLOCK_SIZE / 2 && 
+                                    camera.position.x >= terrain[chunk][block].x - BLOCK_SIZE / 2 && 
+                                    camera.position.z <= terrain[chunk][block].z + BLOCK_SIZE / 2 && 
+                                    camera.position.z >= terrain[chunk][block].z - BLOCK_SIZE / 2) {
+                                    if (camera.position.y <= terrain[chunk][block].y - BLOCK_SIZE / 2) {
+                                        controls.moveForward(-1 * movingSpeed);
+                                    }
                                 }
                             }
                         }
@@ -165,13 +184,15 @@
                 if (keys.includes("a")) {
                     controls.moveRight(-1 * movingSpeed);
                     if (!autoJump) {
-                        for (var block = 0; block < terrain.length; ++block) {
-                            if (camera.position.x <= terrain[block].x + 2.5 && 
-                                camera.position.x >= terrain[block].x - 2.5 && 
-                                camera.position.z <= terrain[block].z + 2.5 && 
-                                camera.position.z >= terrain[block].z - 2.5) {
-                                if (camera.position.y <= terrain[block].y - 2.5) {
-                                    controls.moveRight(movingSpeed);
+                        for (var chunk = 0; chunk < terrain.length; ++chunk) {
+                            for (var block = 0; block < terrain[chunk].length; ++block) {
+                                if (camera.position.x <= terrain[chunk][block].x + BLOCK_SIZE / 2 && 
+                                    camera.position.x >= terrain[chunk][block].x - BLOCK_SIZE / 2 && 
+                                    camera.position.z <= terrain[chunk][block].z + BLOCK_SIZE / 2 && 
+                                    camera.position.z >= terrain[chunk][block].z - BLOCK_SIZE / 2) {
+                                    if (camera.position.y <= terrain[chunk][block].y - BLOCK_SIZE / 2) {
+                                        controls.moveRight(movingSpeed);
+                                    }
                                 }
                             }
                         }
@@ -180,13 +201,15 @@
                 if (keys.includes("s")) {
                     controls.moveForward(-1 * movingSpeed);
                     if (!autoJump) {
-                        for (var block = 0; block < terrain.length; ++block) {
-                            if (camera.position.x <= terrain[block].x + 2.5 && 
-                                camera.position.x >= terrain[block].x - 2.5 && 
-                                camera.position.z <= terrain[block].z + 2.5 && 
-                                camera.position.z >= terrain[block].z - 2.5) {
-                                if (camera.position.y <= terrain[block].y - 2.5) {
-                                    controls.moveForward(movingSpeed);
+                        for (var chunk = 0; chunk < terrain.length; ++chunk) {
+                            for (var block = 0; block < terrain[chunk].length; ++block) {
+                                if (camera.position.x <= terrain[chunk][block].x + BLOCK_SIZE / 2 && 
+                                    camera.position.x >= terrain[chunk][block].x - BLOCK_SIZE / 2 && 
+                                    camera.position.z <= terrain[chunk][block].z + BLOCK_SIZE / 2 && 
+                                    camera.position.z >= terrain[chunk][block].z - BLOCK_SIZE / 2) {
+                                    if (camera.position.y <= terrain[chunk][block].y - BLOCK_SIZE / 2) {
+                                        controls.moveForward(movingSpeed);
+                                    }
                                 }
                             }
                         }
@@ -195,13 +218,15 @@
                 if (keys.includes("d")) {
                     controls.moveRight(movingSpeed);
                     if (!autoJump) {
-                        for (var block = 0; block < terrain.length; ++block) {
-                            if (camera.position.x <= terrain[block].x + 2.5 && 
-                                camera.position.x >= terrain[block].x - 2.5 && 
-                                camera.position.z <= terrain[block].z + 2.5 && 
-                                camera.position.z >= terrain[block].z - 2.5) {
-                                if (camera.position.y <= terrain[block].y - 2.5) {
-                                    controls.moveRight(-1 * movingSpeed);
+                        for (var chunk = 0; chunk < terrain.length; ++chunk) {
+                            for (var block = 0; block < terrain[chunk].length; ++block) {
+                                if (camera.position.x <= terrain[chunk][block].x + BLOCK_SIZE / 2 && 
+                                    camera.position.x >= terrain[chunk][block].x - BLOCK_SIZE / 2 && 
+                                    camera.position.z <= terrain[chunk][block].z + BLOCK_SIZE / 2 && 
+                                    camera.position.z >= terrain[chunk][block].z - BLOCK_SIZE / 2) {
+                                    if (camera.position.y <= terrain[chunk][block].y - BLOCK_SIZE / 2) {
+                                        controls.moveRight(-1 * movingSpeed);
+                                    }
                                 }
                             }
                         }
@@ -211,20 +236,22 @@
                 camera.position.y = camera.position.y - ySpeed;
                 ySpeed += acc;
 
-                for (var block = 0; block < terrain.length; ++block) {
-                    // camera colliding player top of the block horizontal detection
-                    // 2.5 instead of 5 because three js axis in the center of the block
-                    if (camera.position.x <= terrain[block].x + 2.5 && 
-                        camera.position.x >= terrain[block].x - 2.5 && 
-                        camera.position.z <= terrain[block].z + 2.5 && 
-                        camera.position.z >= terrain[block].z - 2.5) {
-                        // player under the top vertical detection
-                        if (camera.position.y <= terrain[block].y + 2.5 &&
-                            camera.position.y >= terrain[block].y - 2.5) {
-                            camera.position.y = terrain[block].y + 2.5;
-                            ySpeed = 0;
-                            canJump = true;
-                            break;
+                for (var chunk = 0; chunk < terrain.length; ++chunk) {
+                    for (var block = 0; block < terrain[chunk].length; ++block) {
+                        // camera colliding player top of the block horizontal detection
+                        // BLOCK_SIZE / 2 instead of BLOCK_SIZE because three js axis in the center of the block
+                        if (camera.position.x <= terrain[chunk][block].x + BLOCK_SIZE / 2 && 
+                            camera.position.x >= terrain[chunk][block].x - BLOCK_SIZE / 2 && 
+                            camera.position.z <= terrain[chunk][block].z + BLOCK_SIZE / 2 && 
+                            camera.position.z >= terrain[chunk][block].z - BLOCK_SIZE / 2) {
+                            // player under the top vertical detection
+                            if (camera.position.y <= terrain[chunk][block].y + BLOCK_SIZE / 2 &&
+                                camera.position.y >= terrain[chunk][block].y - BLOCK_SIZE / 2) {
+                                camera.position.y = terrain[chunk][block].y + BLOCK_SIZE / 2;
+                                ySpeed = 0;
+                                canJump = true;
+                                break;
+                            }
                         }
                     }
                 }
