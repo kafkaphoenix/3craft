@@ -10,10 +10,16 @@
                 left: 20px;
                 top: 20px;
             }
+            #canFlyButton {
+                position: absolute;
+                left: 20px;
+                top: 42px;
+            }
 		</style>
     </head>
     <body>
         <button id="autoJumpButton" onclick="toggleAutoJump()">Auto Jump: On</button>
+        <button id="canFlyButton" onclick="toggleCanFly()">Can Fly: Off</button>
         <script src="js/vendor/three.js"></script>
         <script src="js/vendor/PointerLockControls.js"></script>
         <script src="js/vendor/perlin.js"></script>
@@ -49,6 +55,16 @@
                 text = autoJump ? "Auto Jump: On":"Auto Jump: Off";
                 document.getElementById("autoJumpButton").innerHTML = text;
             }
+            var canFly = false;
+            function toggleCanFly() {
+                canFly = !canFly;
+                if (!canFly) {
+                    canJump = false;
+                }
+                movingSpeed = canFly ? FLY_MOVING_SPEED : MOVING_SPEED;
+                text = canFly ? "Can Fly: On":"Can Fly: Off";
+                document.getElementById("canFlyButton").innerHTML = text;
+            }
 
             var loader = new THREE.TextureLoader();
             var materialArray = [
@@ -69,35 +85,37 @@
                     this.x = x;
                     this.y = y;
                     this.z = z;
+                    this.mesh;
+                    this.line;
                 }
 
                 display() {
                     const blockBox = new THREE.BoxBufferGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE); // w, h, d
-                    //const blockMesh = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-                    const block = new THREE.Mesh(blockBox, materialArray);
-                    scene.add(block);
-                    block.position.x = this.x;
-                    block.position.y = this.y - 10; //camera height
-                    block.position.z = this.z;
+                    //const blockMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+                    this.mesh = new THREE.Mesh(blockBox, materialArray);
+                    scene.add(this.mesh);
+                    this.mesh.position.x = this.x;
+                    this.mesh.position.y = this.y - 10; //camera height
+                    this.mesh.position.z = this.z;
 
                     const edges = new THREE.EdgesGeometry(blockBox);
-                    const line = new THREE.LineSegments(
+                    this.line = new THREE.LineSegments(
                         edges,
                         new THREE.LineBasicMaterial({ color: 0x006400 })
                     );
-                    scene.add(line);
-                    line.position.x = this.x;
-                    line.position.y = this.y - 10; //camera height
-                    line.position.z = this.z;
+                    scene.add(this.line);
+                    this.line.position.x = this.x;
+                    this.line.position.y = this.y - 10; //camera height
+                    this.line.position.z = this.z;
                 }
             }
 
+            var inc = 0.05;
+            var amplitude = 30 + Math.random() * 30;
             function generate() {
                 var chunks = [];
                 var xoff = 0;
                 var zoff = 0;
-                var inc = 0.05;
-                var amplitude = 30 + Math.random() * 70;
                 var chunk = [];
                 //center the camera
                 camera.position.x = RENDER_DISTANCE * CHUNK_SIZE / 2 * BLOCK_SIZE;
@@ -138,7 +156,7 @@
             document.addEventListener("keydown", function(e) {
                 keys.push(e.key);
                 if (e.key == " " && canJump) { //jump
-                    ySpeed = -1.3;
+                    gravity_effect = JUMP_HEIGHT;
                     canJump = false;
                 }
             });
@@ -159,9 +177,12 @@
             controls.addEventListener('lock', function () {});
             controls.addEventListener('unlock', function () {});
 
-            var movingSpeed = 0.7;
-            var ySpeed = 0;
-            var acc = 0.08;
+            const FLY_MOVING_SPEED = 3;
+            const MOVING_SPEED = 0.7;
+            const JUMP_HEIGHT = -1.3;
+            var movingSpeed = MOVING_SPEED;
+            var gravity_effect = 0;
+            var gravity = 0.08;
             
             function update() {
                 if (keys.includes("w")) {
@@ -233,8 +254,14 @@
                     }
                 }
 
-                camera.position.y = camera.position.y - ySpeed;
-                ySpeed += acc;
+                if (!canFly) {
+                    camera.position.y = camera.position.y - gravity_effect;
+                    gravity_effect += gravity;
+                } else {
+                    camera.position.y = camera.position.y - gravity_effect;
+                    gravity_effect = 0;
+                    canJump = true;
+                }
 
                 for (var chunk = 0; chunk < terrain.length; ++chunk) {
                     for (var block = 0; block < terrain[chunk].length; ++block) {
@@ -248,13 +275,264 @@
                             if (camera.position.y <= terrain[chunk][block].y + BLOCK_SIZE / 2 &&
                                 camera.position.y >= terrain[chunk][block].y - BLOCK_SIZE / 2) {
                                 camera.position.y = terrain[chunk][block].y + BLOCK_SIZE / 2;
-                                ySpeed = 0;
-                                canJump = true;
-                                break;
+                                if (!canFly) {
+                                    gravity_effect = 0;
+                                    canJump = true;
+                                    break;
+                                }
                             }
                         }
                     }
                 }
+
+                var lowestXZ = lowestBlock();
+                var highestXZ = highestBlock();
+                var remove_chunk_limit = 5;
+                /*
+                    render distance 3 means 9 chunks
+                    looking from above +y
+                       -x     x
+                    -z [0][3][6]
+                       [1][p][7]
+                     z [2][5][8]
+                */
+                // remove chunks left behind decreasing z forward North
+                if (camera.position.z <= lowestXZ.z + remove_chunk_limit * BLOCK_SIZE) {
+                    for (var chunk = RENDER_DISTANCE - 1; chunk < terrain.length; chunk+=RENDER_DISTANCE) {
+                        for (var block = 0; block < terrain[chunk].length; ++block) {
+                            scene.remove(terrain[chunk][block].mesh);
+                            scene.remove(terrain[chunk][block].line);
+                        }
+                    }
+                    /*
+                        [0][3][6]
+                        [1][p][7]
+                    */
+                    // save chunks we dont want to remove
+                    var new_chunks = [];
+                    for (var chunk = 0; chunk < terrain.length; ++chunk) {
+                        var is_last_chunks_row = (chunk + 1) % RENDER_DISTANCE == 0;
+                        if (!is_last_chunks_row) {
+                            new_chunks.push(terrain[chunk]);
+                        }
+                    }
+                    /*  
+                        [n][n][n]
+                        [0][p][6]
+                        [1][4][7]
+                    */
+                    // add new chunks
+                    for (var i = 0; i < RENDER_DISTANCE; ++i) {
+                        var chunk = [];
+                        xoffset = lowestXZ.x + i * CHUNK_SIZE * BLOCK_SIZE;
+                        for (var x = xoffset; x < xoffset + CHUNK_SIZE * BLOCK_SIZE; x+=BLOCK_SIZE) {
+                            zoffset = lowestXZ.z - CHUNK_SIZE * BLOCK_SIZE;
+                            for (var z = zoffset; z < lowestXZ.z; z+=BLOCK_SIZE) {
+                                xoff = inc * x / BLOCK_SIZE;
+                                zoff = inc * z / BLOCK_SIZE;
+                                var y = Math.round(noise.perlin2(xoff, zoff) * amplitude / BLOCK_SIZE) * BLOCK_SIZE;
+                                chunk.push(new Block(x, y, z));
+                            }
+                        }
+                        new_chunks.splice(i * RENDER_DISTANCE, 0, chunk);
+                    }
+
+                    terrain = new_chunks;
+
+                    for (var chunk = 0; chunk < terrain.length - RENDER_DISTANCE + 1; chunk+= RENDER_DISTANCE) {
+                        for (var block = 0; block < terrain[chunk].length; ++block) {
+                            terrain[chunk][block].display();
+                        }
+                    }
+
+                }
+                /*
+                       -x     x
+                    -z [0][3][6]
+                       [1][p][7]
+                     z [2][5][8]
+                */
+                // remove chunks left behind increasing z backward South
+                if (camera.position.z >= highestXZ.z - remove_chunk_limit * BLOCK_SIZE) {
+                    for (var chunk = 0; chunk < terrain.length - RENDER_DISTANCE + 1; chunk+=RENDER_DISTANCE) {
+                        for (var block = 0; block < terrain[chunk].length; ++block) {
+                            scene.remove(terrain[chunk][block].mesh);
+                            scene.remove(terrain[chunk][block].line);
+                        }
+                    }
+                    /*
+                        [1][p][7]
+                        [2][5][8]
+                    */
+                    // save chunks we dont want to remove
+                    var new_chunks = [];
+                    for (var chunk = 0; chunk < terrain.length; ++chunk) {
+                        var is_first_chunks_row = chunk % RENDER_DISTANCE == 0;
+                        if (!is_first_chunks_row) {
+                            new_chunks.push(terrain[chunk]);
+                        }
+                    }
+                    /*  
+                        [1][4][7]
+                        [2][p][8]
+                        [n][n][n]
+                    */
+                    // add new chunks
+                    for (var i = 0; i < RENDER_DISTANCE; ++i) {
+                        var chunk = [];
+                        xoffset = lowestXZ.x + i * CHUNK_SIZE * BLOCK_SIZE;
+                        for (var x = xoffset; x < xoffset + CHUNK_SIZE * BLOCK_SIZE; x+=BLOCK_SIZE) {
+                            zoffset = highestXZ.z + BLOCK_SIZE;
+                            for (var z = zoffset; z < zoffset + CHUNK_SIZE * BLOCK_SIZE; z+=BLOCK_SIZE) {
+                                xoff = inc * x / BLOCK_SIZE;
+                                zoff = inc * z / BLOCK_SIZE;
+                                var y = Math.round(noise.perlin2(xoff, zoff) * amplitude / BLOCK_SIZE) * BLOCK_SIZE;
+                                chunk.push(new Block(x, y, z));
+                            }
+                        }
+                        new_chunks.splice(i * RENDER_DISTANCE + 2, 0, chunk);
+                    }
+
+                    terrain = new_chunks;
+
+                    for (var chunk = RENDER_DISTANCE - 1; chunk < terrain.length; chunk+=RENDER_DISTANCE) {
+                        for (var block = 0; block < terrain[chunk].length; ++block) {
+                            terrain[chunk][block].display();
+                        }
+                    }
+                }
+                /*
+                       -x     x
+                    -z [0][3][6]
+                       [1][p][7]
+                     z [2][5][8]
+                */
+                // remove chunks left behind increasing x right East
+                if (camera.position.x >= highestXZ.x - remove_chunk_limit * BLOCK_SIZE) {
+                    for (var chunk = 0; chunk < RENDER_DISTANCE; ++chunk) {
+                        for (var block = 0; block < terrain[chunk].length; ++block) {
+                            scene.remove(terrain[chunk][block].mesh);
+                            scene.remove(terrain[chunk][block].line);
+                        }
+                    }
+                    /*
+                        [3][6]
+                        [p][7]
+                        [5][8]
+                    */
+                    // save chunks we dont want to remove
+                    var new_chunks = [];
+                    for (var chunk = RENDER_DISTANCE; chunk < terrain.length; ++chunk) {
+                        new_chunks.push(terrain[chunk]);
+                    }
+                    /*  
+                        [3][6][n]
+                        [4][p][n]
+                        [5][8][n]
+                    */
+                    // add new chunks
+                    for (var i = 0; i < RENDER_DISTANCE; ++i) {
+                        var chunk = [];
+                        zoffset = lowestXZ.z + i * CHUNK_SIZE * BLOCK_SIZE;
+                        for (var z = zoffset; z < zoffset + CHUNK_SIZE * BLOCK_SIZE; z+=BLOCK_SIZE) {
+                            xoffset = highestXZ.x + BLOCK_SIZE;
+                            for (var x = xoffset; x < xoffset + CHUNK_SIZE * BLOCK_SIZE; x+=BLOCK_SIZE) {
+                                xoff = inc * x / BLOCK_SIZE;
+                                zoff = inc * z / BLOCK_SIZE;
+                                var y = Math.round(noise.perlin2(xoff, zoff) * amplitude / BLOCK_SIZE) * BLOCK_SIZE;
+                                chunk.push(new Block(x, y, z));
+                            }
+                        }
+                        new_chunks.splice(terrain.length - (RENDER_DISTANCE - i), 0, chunk);
+                    }
+
+                    terrain = new_chunks;
+
+                    for (var chunk = terrain.length - RENDER_DISTANCE; chunk < terrain.length; ++chunk) {
+                        for (var block = 0; block < terrain[chunk].length; ++block) {
+                            terrain[chunk][block].display();
+                        }
+                    }
+                }
+                /*
+                       -x     x
+                    -z [0][3][6]
+                       [1][p][7]
+                     z [2][5][8]
+                */
+                // remove chunks left behind increasing x left West
+                if (camera.position.x <= lowestXZ.x + remove_chunk_limit * BLOCK_SIZE) {
+                    for (var chunk = terrain.length - RENDER_DISTANCE; chunk < terrain.length; ++chunk) {
+                        for (var block = 0; block < terrain[chunk].length; ++block) {
+                            scene.remove(terrain[chunk][block].mesh);
+                            scene.remove(terrain[chunk][block].line);
+                        }
+                    }
+                    /*
+                        [0][3]
+                        [1][p]
+                        [2][5]
+                    */
+                    // save chunks we dont want to remove
+                    var new_chunks = [];
+                    for (var chunk = 0; chunk < terrain.length - RENDER_DISTANCE; ++chunk) {
+                        new_chunks.push(terrain[chunk]);
+                    }
+                    /*  
+                        [n][3][6]
+                        [n][p][7]
+                        [n][5][8]
+                    */
+                    // add new chunks
+                    for (var i = 0; i < RENDER_DISTANCE; ++i) {
+                        var chunk = [];
+                        zoffset = lowestXZ.z + i * CHUNK_SIZE * BLOCK_SIZE;
+                        for (var z = zoffset; z < zoffset + CHUNK_SIZE * BLOCK_SIZE; z+=BLOCK_SIZE) {
+                            xoffset = lowestXZ.x - CHUNK_SIZE * BLOCK_SIZE;
+                            for (var x = xoffset; x < lowestXZ.x; x+=BLOCK_SIZE) {
+                                xoff = inc * x / BLOCK_SIZE;
+                                zoff = inc * z / BLOCK_SIZE;
+                                var y = Math.round(noise.perlin2(xoff, zoff) * amplitude / BLOCK_SIZE) * BLOCK_SIZE;
+                                chunk.push(new Block(x, y, z));
+                            }
+                        }
+                        new_chunks.splice(i, 0, chunk);
+                    }
+
+                    terrain = new_chunks;
+
+                    for (var chunk = 0; chunk < RENDER_DISTANCE; ++chunk) {
+                        for (var block = 0; block < terrain[chunk].length; ++block) {
+                            terrain[chunk][block].display();
+                        }
+                    }
+                }
+            }
+
+            function lowestBlock() {
+                var xPosArray = []
+                var zPosArray = []
+                for (var chunk = 0; chunk < terrain.length; ++chunk) {
+                    for (var block = 0; block < terrain[chunk].length; ++block) {
+                        xPosArray.push(terrain[chunk][block].x)
+                        zPosArray.push(terrain[chunk][block].z)
+                    }
+                }
+
+                return {'x': Math.min.apply(null, xPosArray), 'z': Math.min.apply(null, zPosArray)}
+            }
+
+            function highestBlock() {
+                var xPosArray = []
+                var zPosArray = []
+                for (var chunk = 0; chunk < terrain.length; ++chunk) {
+                    for (var block = 0; block < terrain[chunk].length; ++block) {
+                        xPosArray.push(terrain[chunk][block].x)
+                        zPosArray.push(terrain[chunk][block].z)
+                    }
+                }
+
+                return {'x': Math.max.apply(null, xPosArray), 'z': Math.max.apply(null, zPosArray)}
             }
 
             function gameloop() {
