@@ -1,0 +1,9 @@
+# 3craft
+
+Minecraft clone in THREE js.
+
+Learning project following this youtube series https://www.youtube.com/playlist?list=PLEtXCX1lakbhq_01JKJILx90wLfdwrJig
+
+## Running
+
+Just run the following command `python -m http.server` in a terminal inside this project folder and go to http://localhost:8000/main.html

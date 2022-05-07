@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>3craft</title>
+        <style>
+			body { margin: 0; }
+            #autoJumpButton {
+                position: absolute;
+                left: 20px;
+                top: 20px;
+            }
+		</style>
+    </head>
+    <body>
+        <button id="autoJumpButton" onclick="toggleAutoJump()">Auto Jump: On</button>
+        <script src="js/vendor/three.js"></script>
+        <script src="js/vendor/PointerLockControls.js"></script>
+        <script src="js/vendor/perlin.js"></script>
+        <script type="text/javascript">
+            noise.seed(Math.random())
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x00ffff);
+ 		    scene.fog = new THREE.Fog(0x00ffff, 10, 650);
+            var fov = 90;
+            var aspect_ratio = window.innerWidth / window.innerHeight;
+            var near_clipping = 0.1;
+            var far_clipping = 1000;
+            var camera = new THREE.PerspectiveCamera(
+                fov,
+                aspect_ratio,
+                near_clipping,
+                far_clipping
+            );
+
+            window.addEventListener("resize", function() {
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+            });
+
+            const renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+            
+            var autoJump = true;
+            function toggleAutoJump() {
+                autoJump = !autoJump;
+                text = autoJump ? "Auto Jump: On":"Auto Jump: Off";
+                document.getElementById("autoJumpButton").innerHTML = text;
+            }
+
+            var loader = new THREE.TextureLoader();
+            var materialArray = [
+                new THREE.MeshBasicMaterial({map : loader.load("assets/textures/dirt-face.jpg")}),
+                new THREE.MeshBasicMaterial({map : loader.load("assets/textures/dirt-face.jpg")}),
+                new THREE.MeshBasicMaterial({map : loader.load("assets/textures/dirt-top.jpg")}),
+                new THREE.MeshBasicMaterial({map : loader.load("assets/textures/dirt-bottom.jpg")}),
+                new THREE.MeshBasicMaterial({map : loader.load("assets/textures/dirt-face.jpg")}),
+                new THREE.MeshBasicMaterial({map : loader.load("assets/textures/dirt-face.jpg")}),
+            ];
+
+            class Block {
+                constructor(x, y, z) {
+                    this.x = x;
+                    this.y = y;
+                    this.z = z;
+                }
+
+                display() {
+                    const blockBox = new THREE.BoxBufferGeometry(5, 5, 5); // w, h, d
+                    //const blockMesh = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+                    const block = new THREE.Mesh(blockBox, materialArray);
+                    scene.add(block);
+                    block.position.x = this.x;
+                    block.position.y = this.y - 10;
+                    block.position.z = this.z;
+
+                    const edges = new THREE.EdgesGeometry(blockBox);
+                    const line = new THREE.LineSegments(
+                        edges,
+                        new THREE.LineBasicMaterial({ color: 0x006400 })
+                    );
+                    scene.add(line);
+                    line.position.x = this.x;
+                    line.position.y = this.y - 10;
+                    line.position.z = this.z;
+                }
+            }
+
+            function generate(nblocks) {
+                var blocks = [];
+                var xoff = 0;
+                var zoff = 0;
+                var inc = 0.05;
+                var amplitude = 50;
+                for (var x = 0; x < nblocks; ++x) {
+                    xoff = 0;
+                    for (var z = 0; z < nblocks; ++z) {
+                        var y = Math.round(noise.perlin2(xoff, zoff) * amplitude / 5) * 5;
+                        blocks.push(new Block(x * 5, y, z * 5))
+                        xoff += inc;
+                    }
+                    zoff += inc;
+                }
+
+                return blocks;
+            }
+
+            terrain = generate(20);
+            for (var block = 0; block < terrain.length; ++block) {
+                terrain[block].display();
+            }
+
+            function render() {
+                renderer.render(scene, camera);
+            }
+
+            var keys = [];
+            var canJump = true;
+            document.addEventListener("keydown", function(e) {
+                keys.push(e.key);
+                if (e.key == " " && canJump) { //jump
+                    ySpeed = -1.3;
+                    canJump = false;
+                }
+            });
+            document.addEventListener("keyup", function(e) {
+                var newArr = [];
+                for (var i = 0; i < keys.length; ++i) {
+                    if (keys[i] != e.key) {
+                        newArr.push(keys[i]);
+                    }
+                }
+                keys = newArr;
+            });
+
+            const controls = new THREE.PointerLockControls(camera, document.body);
+            document.body.addEventListener("click", function() {
+                controls.lock()
+            });
+            controls.addEventListener('lock', function () {});
+            controls.addEventListener('unlock', function () {});
+
+            var movingSpeed = 0.7;
+            var ySpeed = 0;
+            var acc = 0.08;
+            
+            function update() {
+                if (keys.includes("w")) {
+                    controls.moveForward(movingSpeed);
+                    if (!autoJump) {
+                        for (var block = 0; block < terrain.length; ++block) {
+                            if (camera.position.x <= terrain[block].x + 2.5 && 
+                                camera.position.x >= terrain[block].x - 2.5 && 
+                                camera.position.z <= terrain[block].z + 2.5 && 
+                                camera.position.z >= terrain[block].z - 2.5) {
+                                if (camera.position.y <= terrain[block].y - 2.5) {
+                                    controls.moveForward(-1 * movingSpeed);
+                                }
+                            }
+                        }
+                    }
+                }
+                if (keys.includes("a")) {
+                    controls.moveRight(-1 * movingSpeed);
+                    if (!autoJump) {
+                        for (var block = 0; block < terrain.length; ++block) {
+                            if (camera.position.x <= terrain[block].x + 2.5 && 
+                                camera.position.x >= terrain[block].x - 2.5 && 
+                                camera.position.z <= terrain[block].z + 2.5 && 
+                                camera.position.z >= terrain[block].z - 2.5) {
+                                if (camera.position.y <= terrain[block].y - 2.5) {
+                                    controls.moveRight(movingSpeed);
+                                }
+                            }
+                        }
+                    }
+                }
+                if (keys.includes("s")) {
+                    controls.moveForward(-1 * movingSpeed);
+                    if (!autoJump) {
+                        for (var block = 0; block < terrain.length; ++block) {
+                            if (camera.position.x <= terrain[block].x + 2.5 && 
+                                camera.position.x >= terrain[block].x - 2.5 && 
+                                camera.position.z <= terrain[block].z + 2.5 && 
+                                camera.position.z >= terrain[block].z - 2.5) {
+                                if (camera.position.y <= terrain[block].y - 2.5) {
+                                    controls.moveForward(movingSpeed);
+                                }
+                            }
+                        }
+                    }
+                }
+                if (keys.includes("d")) {
+                    controls.moveRight(movingSpeed);
+                    if (!autoJump) {
+                        for (var block = 0; block < terrain.length; ++block) {
+                            if (camera.position.x <= terrain[block].x + 2.5 && 
+                                camera.position.x >= terrain[block].x - 2.5 && 
+                                camera.position.z <= terrain[block].z + 2.5 && 
+                                camera.position.z >= terrain[block].z - 2.5) {
+                                if (camera.position.y <= terrain[block].y - 2.5) {
+                                    controls.moveRight(-1 * movingSpeed);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                camera.position.y = camera.position.y - ySpeed;
+                ySpeed += acc;
+
+                for (var block = 0; block < terrain.length; ++block) {
+                    // camera colliding player top of the block horizontal detection
+                    // 2.5 instead of 5 because three js axis in the center of the block
+                    if (camera.position.x <= terrain[block].x + 2.5 && 
+                        camera.position.x >= terrain[block].x - 2.5 && 
+                        camera.position.z <= terrain[block].z + 2.5 && 
+                        camera.position.z >= terrain[block].z - 2.5) {
+                        // player under the top vertical detection
+                        if (camera.position.y <= terrain[block].y + 2.5 &&
+                            camera.position.y >= terrain[block].y - 2.5) {
+                            camera.position.y = terrain[block].y + 2.5;
+                            ySpeed = 0;
+                            canJump = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            function gameloop() {
+                requestAnimationFrame( gameloop );
+                update();
+                render();
+            }
+
+            gameloop();
+        </script>
+    </body>
+</html>
