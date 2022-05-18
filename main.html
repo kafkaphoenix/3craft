@@ -13,8 +13,12 @@
             #canFlyButton {
                 position: absolute;
                 right: 20px;
-                top: 42px;
+                top: 50px;
             }
+            #cursor {
+                position : absolute;
+                width : 3%;
+		    }
 		</style>
     </head>
     <body>
@@ -24,7 +28,12 @@
         <script src="js/vendor/stats.js"></script>
         <script src="js/vendor/PointerLockControls.js"></script>
         <script src="js/vendor/perlin.js"></script>
+        <img src = "assets/cursor.png" id = "cursor">
         <script type="text/javascript">
+
+            var cursor = document.getElementById("cursor");
+            cursor.style.left = ((0.5 * window.innerWidth) - (0.5 * cursor.width)).toString() + "px";
+            cursor.style.top = ((0.5 * window.innerHeight) - (0.5 * cursor.height)).toString() + "px";
 
             var stats = new Stats();
             stats.showPanel(0); // 0:fps, 1:ms, 2:mb, 3+:custom
@@ -56,12 +65,6 @@
             const renderer = new THREE.WebGLRenderer();
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
-
-            window.addEventListener("resize", function() {
-                renderer.setSize(window.innerWidth, window.innerHeight);
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-            });
             
             const FLY_MOVING_SPEED = 3;
             const MOVING_SPEED = 0.7;
@@ -73,6 +76,14 @@
             var canJump = true;
             var canFly = false;
             var keys = [];
+            var controlsKeys = {
+                forward: 'w',
+                backward: 's',
+                right: 'd',
+                left: 'a',
+                jump: ' ',
+                placeBlock: 'q'
+            }
 
             function toggleAutoJump() {
                 autoJump = !autoJump;
@@ -92,8 +103,7 @@
 
             document.addEventListener("keydown", function(e) {
                 keys.push(e.key);
-                const SPACE = " ";
-                if (e.key == SPACE && canJump) { //jump
+                if (e.key == controlsKeys.jump && canJump) {
                     gravity_effect = JUMP_HEIGHT;
                     canJump = false;
                 }
@@ -118,9 +128,10 @@
             var loader = new THREE.TextureLoader();
 
             var inc = 0.05;
-            var amplitude = 20 + Math.random() * 30;
-            const BLOCK_SIZE = 5;
-            const RENDER_DISTANCE = 3;
+            var amplitude = 10 + Math.random() * 10;
+            const BLOCK_SIZE = 2;
+            const PLAYER_REACH = 4 * BLOCK_SIZE;
+            const RENDER_DISTANCE = 9;
             const CHUNK_SIZE = 16;
 
             var materialArray = [
@@ -242,12 +253,104 @@
 
             terrain = generate();
 
+            window.addEventListener("resize", function() {
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                cursor.style.left = ((0.5 * window.innerWidth) - (0.5 * cursor.width)).toString() + "px";
+ 			    cursor.style.top = ((0.5 * window.innerHeight) - (0.5 * cursor.height)).toString() + "px";
+            });
+
+            const raycaster = new THREE.Raycaster();
+            const pointer = new THREE.Vector2();
+            pointer.x = 0;
+            pointer.y = 0;
+
+            var plane;
             function render() {
+                raycaster.setFromCamera(pointer, camera);
+                var intersection = raycaster.intersectObject(instancedChunk);
+                if (intersection[0] && intersection[0].distance < PLAYER_REACH) {
+                    if (!scene.children.includes(plane)) {
+                        var planeG = new THREE.PlaneGeometry(BLOCK_SIZE, BLOCK_SIZE);
+                        var planeM = new THREE.MeshBasicMaterial({color: 0xffffff, side: THREE.DoubleSide});
+                        planeM.transparent = true;
+                        planeM.opacity = 0.5;
+                        plane = new THREE.Mesh(planeG, planeM);
+                        scene.add(plane);
+                    } else {
+                    	plane.visible = true;
+                        var materialIndex = intersection[0].face.materialIndex;
+                        var position = intersection[0].point; // object with x, y and z coords
+                        var x = 0;
+                        var y = 0;
+                        var z = 0;
+                        const inc = 0.1; 
+                        switch(materialIndex){
+                            case 0: // right
+                                plane.rotation.x = 0;
+                                plane.rotation.y = (Math.PI / 2);
+                                plane.rotation.z = 0;
+                                x = position.x + inc;
+                                y = Math.round(position.y / BLOCK_SIZE) * BLOCK_SIZE;
+                                z = Math.round(position.z / BLOCK_SIZE) * BLOCK_SIZE;
+                                break;
+                            case 1: // left
+                                plane.rotation.x = 0;
+                                plane.rotation.y = (Math.PI / 2);
+                                plane.rotation.z = 0;
+                                x = position.x - inc;
+                                y = Math.round(position.y / BLOCK_SIZE) * BLOCK_SIZE;
+                                z = Math.round(position.z / BLOCK_SIZE) * BLOCK_SIZE;
+                                break;
+                            case 2: // top
+                                plane.rotation.x = (Math.PI / 2);
+                                plane.rotation.y = 0;
+                                plane.rotation.z = 0;
+                                x = Math.round(position.x / BLOCK_SIZE) * BLOCK_SIZE;
+                                y = position.y + inc;
+                                z = Math.round(position.z / BLOCK_SIZE) * BLOCK_SIZE;
+                                break;
+                            case 3: // bottom
+                                plane.rotation.x = (Math.PI / 2);
+                                plane.rotation.y = 0;
+                                plane.rotation.z = 0;
+                                x = Math.round(position.x / BLOCK_SIZE) * BLOCK_SIZE;
+                                y = position.y - inc;
+                                z = Math.round(position.z / BLOCK_SIZE) * BLOCK_SIZE;
+                                break;
+                            case 4: // front
+                                plane.rotation.x = 0;
+                                plane.rotation.y = 0;
+                                plane.rotation.z = 0;
+                                x = Math.round(position.x / BLOCK_SIZE) * BLOCK_SIZE;
+                                y = Math.round(position.y / BLOCK_SIZE) * BLOCK_SIZE;
+                                z = position.z + inc;
+                                break;
+                            case 5: // back
+                                plane.rotation.x = 0;
+                                plane.rotation.y = 0;
+                                plane.rotation.z = 0;
+                                x = Math.round(position.x / BLOCK_SIZE) * BLOCK_SIZE;
+                                y = Math.round(position.y / BLOCK_SIZE) * BLOCK_SIZE;
+                                z = position.z - inc;
+                                break;
+                        }
+                        plane.position.x = x;
+                        plane.position.y = y;
+                        plane.position.z = z;
+                    }
+                } else {
+                    if (plane) {
+                        plane.visible = false;
+                    }
+                }
+
                 renderer.render(scene, camera);
             }
             
             function update() {
-                if (keys.includes("w")) {
+                if (keys.includes(controlsKeys.forward)) {
                     controls.moveForward(movingSpeed);
                     if (!autoJump) {
                         for (var chunk = 0; chunk < terrain.length; ++chunk) {
@@ -264,7 +367,7 @@
                         }
                     }
                 }
-                if (keys.includes("a")) {
+                if (keys.includes(controlsKeys.left)) {
                     controls.moveRight(-1 * movingSpeed);
                     if (!autoJump) {
                         for (var chunk = 0; chunk < terrain.length; ++chunk) {
@@ -281,7 +384,7 @@
                         }
                     }
                 }
-                if (keys.includes("s")) {
+                if (keys.includes(controlsKeys.backward)) {
                     controls.moveForward(-1 * movingSpeed);
                     if (!autoJump) {
                         for (var chunk = 0; chunk < terrain.length; ++chunk) {
@@ -298,7 +401,7 @@
                         }
                     }
                 }
-                if (keys.includes("d")) {
+                if (keys.includes(controlsKeys.right)) {
                     controls.moveRight(movingSpeed);
                     if (!autoJump) {
                         for (var chunk = 0; chunk < terrain.length; ++chunk) {
@@ -347,7 +450,8 @@
                     }
                 }
 
-                const remove_chunk_threshold = 5;
+                const worldSize = CHUNK_SIZE * RENDER_DISTANCE * BLOCK_SIZE;
+                const ratio = 0.4;
                 var lowestXZ = lowestBlock();
                 /*
                     render distance 3 means 9 chunks
@@ -358,7 +462,7 @@
                      z [2][5][8]
                 */
                 // remove chunks left behind decreasing z forward North
-                if (camera.position.z <= lowestXZ.z + remove_chunk_threshold * BLOCK_SIZE) {
+                if (camera.position.z <= lowestXZ.z + worldSize * ratio) {
                     /*
                         [0][3][6]
                         [1][p][7]
@@ -418,7 +522,7 @@
                      z [2][5][8]
                 */
                 // remove chunks left behind increasing z backward South
-                if (camera.position.z >= highestXZ.z - remove_chunk_threshold * BLOCK_SIZE) {
+                if (camera.position.z >= highestXZ.z - worldSize * ratio) {
                     /*
                         [1][p][7]
                         [2][5][8]
@@ -479,7 +583,7 @@
                      z [2][5][8]
                 */
                 // remove chunks left behind increasing x right East
-                if (camera.position.x >= highestXZ.x - remove_chunk_threshold * BLOCK_SIZE) {
+                if (camera.position.x >= highestXZ.x - worldSize * ratio) {
                     /*
                         [3][6]
                         [p][7]
@@ -538,7 +642,7 @@
                      z [2][5][8]
                 */
                 // remove chunks left behind increasing x left West
-                if (camera.position.x <= lowestXZ.x + remove_chunk_threshold * BLOCK_SIZE) {
+                if (camera.position.x <= lowestXZ.x + worldSize * ratio) {
                     /*
                         [0][3]
                         [1][p]
