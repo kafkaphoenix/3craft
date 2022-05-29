@@ -70,10 +70,12 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
 
-            const RENDER_DISTANCE = 4;
+            const RENDER_DISTANCE = 3;
             const CHUNK_SIZE = 16;
             const BLOCK_SIZE = 5;
             const WORLD_SIZE = CHUNK_SIZE * RENDER_DISTANCE * BLOCK_SIZE;
+            const DEPTH = 10;
+            const MIN_WORLD_Y = -250;
             //center the camera
             camera.position.x = RENDER_DISTANCE * CHUNK_SIZE / 10;
             camera.position.z = RENDER_DISTANCE * CHUNK_SIZE / 10;
@@ -225,15 +227,17 @@
                                 break;
                         }
                         y = Math.round(y); // sometimes, y is for some reason e.g 4.999999999999
-                        var new_block = new Block(x, y, z, true);
-                        var is_intersecting = intersect(
-                            new_block.x, new_block.y, new_block.z, BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE,
-                            player.x, player.y, player.z, player.width, player.height, player.depth
-                        );
-                        if (!is_intersecting) {
-                            placedBlocks.push(new_block);
-                            terrain[identifyChunk(x, z)].push(new_block);
-                            rebuild_mesh();
+                        if (y > MIN_WORLD_Y) {
+                            var new_block = new Block(x, y, z, true);
+                            var is_intersecting = intersect(
+                                new_block.x, new_block.y, new_block.z, BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE,
+                                player.x, player.y, player.z, player.width, player.height, player.depth
+                            );
+                            if (!is_intersecting) {
+                                placedBlocks.push(new_block);
+                                terrain[identifyChunk(x, z)].push(new_block);
+                                rebuild_mesh();
+                            }
                         }
                     }
                 }
@@ -399,7 +403,7 @@
             }
 
             var blockBox = new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-            const total_meshes = CHUNK_SIZE * CHUNK_SIZE * RENDER_DISTANCE * RENDER_DISTANCE;
+            const total_meshes = CHUNK_SIZE * CHUNK_SIZE * RENDER_DISTANCE * RENDER_DISTANCE * DEPTH;
             var instancedChunk = new THREE.InstancedMesh(blockBox, materialArray, total_meshes);
             function generate() {
                 var chunks = [];
@@ -415,10 +419,15 @@
                                 xoff = inc * x;
                                 zoff = inc * z;
                                 var y = Math.round(noise.perlin2(xoff, zoff) * amplitude / BLOCK_SIZE) * BLOCK_SIZE;
-                                chunk.push(new Block(x * BLOCK_SIZE, y, z * BLOCK_SIZE, false));
-                                let matrix = new THREE.Matrix4().makeTranslation(x * BLOCK_SIZE, y, z * BLOCK_SIZE);
-                                instancedChunk.setMatrixAt(count, matrix);
-                                ++count;
+                                for (var depth = 0; depth < DEPTH; ++depth) {
+                                    if (y - (depth * BLOCK_SIZE) < MIN_WORLD_Y) {
+                                        continue;
+                                    }
+                                    chunk.push(new Block(x * BLOCK_SIZE, y - (depth * BLOCK_SIZE), z * BLOCK_SIZE, false));
+                                    let matrix = new THREE.Matrix4().makeTranslation(x * BLOCK_SIZE, y - (depth * BLOCK_SIZE), z * BLOCK_SIZE);
+                                    instancedChunk.setMatrixAt(count, matrix);
+                                    ++count;
+                                }
                             }
                         }
                         chunks.push(chunk);
@@ -936,9 +945,14 @@
                 var xoff = inc * x / BLOCK_SIZE;
                 var zoff = inc * z / BLOCK_SIZE;
                 var y = Math.round(noise.perlin2(xoff, zoff) * amplitude / BLOCK_SIZE) * BLOCK_SIZE;
-                var broken_block = getBlock(brokenBlocks, x, y, z);
-                if (broken_block.block == undefined) {
-                    chunk.push(new Block(x, y, z, false));
+                for (var depth = 0; depth < DEPTH; ++depth) {
+                    if (y - (depth * BLOCK_SIZE) < MIN_WORLD_Y) {
+                        continue;
+                    }    
+                    var broken_block = getBlock(brokenBlocks, x, y - (depth * BLOCK_SIZE), z);
+                    if (broken_block.block == undefined) {
+                        chunk.push(new Block(x, y - (depth * BLOCK_SIZE), z, false));
+                    }
                 }
                 add_player_structures(chunk, x, z);
             }
