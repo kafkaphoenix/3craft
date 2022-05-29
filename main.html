@@ -38,7 +38,6 @@
             var stats = new Stats();
             stats.showPanel(0); // 0:fps, 1:ms, 2:mb, 3+:custom
             document.body.appendChild(stats.dom);
-
             function showStats() {
                 stats.begin();
                 stats.end();
@@ -47,7 +46,6 @@
             requestAnimationFrame(showStats);
 
             noise.seed(Math.random());
-
             const scene = new THREE.Scene();
             scene.background = new THREE.Color(0x00ffff);
  		    scene.fog = new THREE.Fog(0x00ffff, 10, 650);
@@ -61,36 +59,42 @@
                 near_clipping,
                 far_clipping
             );
-
+            window.addEventListener("resize", function() {
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                cursor.style.left = ((0.5 * window.innerWidth) - (0.5 * cursor.width)).toString() + "px";
+ 			    cursor.style.top = ((0.5 * window.innerHeight) - (0.5 * cursor.height)).toString() + "px";
+            });
             const renderer = new THREE.WebGLRenderer();
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
-            
+
+
             const FLY_MOVING_SPEED = 3;
             const MOVING_SPEED = 0.7;
-            const JUMP_HEIGHT = -1.3;
+            const JUMP_HEIGHT = -1;
             var movingSpeed = MOVING_SPEED;
             var gravity_effect = 0;
-            var gravity = 0.08;
+            var gravity = 0.065;
             var autoJump = true;
             var canJump = true;
             var canFly = false;
             var keys = [];
+            var SPACE = ' ';
             var controlsKeys = {
                 forward: 'w',
                 backward: 's',
                 right: 'd',
                 left: 'a',
-                jump: ' ',
+                jump: SPACE,
                 placeBlock: 'q'
             }
-
             function toggleAutoJump() {
                 autoJump = !autoJump;
                 text = autoJump ? "Auto Jump: On":"Auto Jump: Off";
                 document.getElementById("autoJumpButton").innerHTML = text;
             }
-
             function toggleCanFly() {
                 canFly = !canFly;
                 if (!canFly) {
@@ -100,12 +104,65 @@
                 text = canFly ? "Can Fly: On":"Can Fly: Off";
                 document.getElementById("canFlyButton").innerHTML = text;
             }
-
+            const raycaster = new THREE.Raycaster();
+            const pointer = new THREE.Vector2();
+            pointer.x = (0.5) * 2 - 1;
+            pointer.y = -1 * (0.5) * 2 + 1;
             document.addEventListener("keydown", function(e) {
                 keys.push(e.key);
                 if (e.key == controlsKeys.jump && canJump) {
                     gravity_effect = JUMP_HEIGHT;
                     canJump = false;
+                }
+                if (keys.includes(controlsKeys.placeBlock)) {
+                    raycaster.setFromCamera(pointer, camera);
+                    var intersection = raycaster.intersectObject(instancedChunk);
+
+                    if (intersection[0] != undefined && intersection[0].distance < PLAYER_REACH) {
+                        var materialIndex = intersection[0].face.materialIndex;
+                        var position = intersection[0].point; // object with x, y and z coords
+                        var x = 0;
+                        var y = 0;
+                        var z = 0;
+                        const inc = BLOCK_SIZE / 2; // offset to avoid placing the block where we are looking
+                        switch(materialIndex){
+                            case 0: // right
+                                x = position.x + inc;
+                                y = Math.round(position.y / BLOCK_SIZE) * BLOCK_SIZE;
+                                z = Math.round(position.z / BLOCK_SIZE) * BLOCK_SIZE;
+                                break;
+                            case 1: // left
+                                x = position.x - inc;
+                                y = Math.round(position.y / BLOCK_SIZE) * BLOCK_SIZE;
+                                z = Math.round(position.z / BLOCK_SIZE) * BLOCK_SIZE;
+                                break;
+                            case 2: // top
+                                x = Math.round(position.x / BLOCK_SIZE) * BLOCK_SIZE;
+                                y = position.y + inc;
+                                z = Math.round(position.z / BLOCK_SIZE) * BLOCK_SIZE;
+                                break;
+                            case 3: // bottom
+                                x = Math.round(position.x / BLOCK_SIZE) * BLOCK_SIZE;
+                                y = position.y - inc;
+                                z = Math.round(position.z / BLOCK_SIZE) * BLOCK_SIZE;
+                                break;
+                            case 4: // front
+                                x = Math.round(position.x / BLOCK_SIZE) * BLOCK_SIZE;
+                                y = Math.round(position.y / BLOCK_SIZE) * BLOCK_SIZE;
+                                z = position.z + inc;
+                                break;
+                            case 5: // back
+                                x = Math.round(position.x / BLOCK_SIZE) * BLOCK_SIZE;
+                                y = Math.round(position.y / BLOCK_SIZE) * BLOCK_SIZE;
+                                z = position.z - inc;
+                                break;
+                        }
+                        y = Math.round(y); // sometimes, y is for some reason e.g 4.999999999999
+                        var new_block = new Block(x, y, z, true);
+                        placedBlocks.push(new_block);
+                        terrain[identifyChunk(x, z)].push(new_block);
+                        rebuild_mesh();
+                    }
                 }
             });
             document.addEventListener("keyup", function(e) {
@@ -117,23 +174,79 @@
                 }
                 keys = newArr;
             });
-
             const controls = new THREE.PointerLockControls(camera, document.body);
+            var brokenBlocks = [];
             document.body.addEventListener("click", function() {
                 controls.lock();
+                if (controls.isLocked) {
+                    raycaster.setFromCamera(pointer, camera);
+                    var intersection = raycaster.intersectObject(instancedChunk);
+
+                    if (intersection[0] != undefined && intersection[0].distance < PLAYER_REACH) {
+                        var materialIndex = intersection[0].face.materialIndex;
+                        var position = intersection[0].point; // object with x, y and z coords
+                        var x = 0;
+                        var y = 0;
+                        var z = 0;
+                        const inc = BLOCK_SIZE / 2; //offset to center the block we want to remove
+                        switch(materialIndex){
+                            case 0: // right
+                                x = position.x - inc;
+                                y = Math.round(position.y / BLOCK_SIZE) * BLOCK_SIZE;
+                                z = Math.round(position.z / BLOCK_SIZE) * BLOCK_SIZE;
+                                break;
+                            case 1: // left
+                                x = position.x + inc;
+                                y = Math.round(position.y / BLOCK_SIZE) * BLOCK_SIZE;
+                                z = Math.round(position.z / BLOCK_SIZE) * BLOCK_SIZE;
+                                break;
+                            case 2: // top
+                                x = Math.round(position.x / BLOCK_SIZE) * BLOCK_SIZE;
+                                y = position.y - inc;
+                                z = Math.round(position.z / BLOCK_SIZE) * BLOCK_SIZE;
+                                break;
+                            case 3: // bottom
+                                x = Math.round(position.x / BLOCK_SIZE) * BLOCK_SIZE;
+                                y = position.y + inc;
+                                z = Math.round(position.z / BLOCK_SIZE) * BLOCK_SIZE;
+                                break;
+                            case 4: // front
+                                x = Math.round(position.x / BLOCK_SIZE) * BLOCK_SIZE;
+                                y = Math.round(position.y / BLOCK_SIZE) * BLOCK_SIZE;
+                                z = position.z - inc;
+                                break;
+                            case 5: // back
+                                x = Math.round(position.x / BLOCK_SIZE) * BLOCK_SIZE;
+                                y = Math.round(position.y / BLOCK_SIZE) * BLOCK_SIZE;
+                                z = position.z + inc;
+                                break;
+                        }
+                        var chunk_index = identifyChunk(x, z);
+                        y = Math.round(y); // sometimes, y is for some reason e.g 4.999999999999
+                        var chunk = terrain[chunk_index];
+                        var broken_block = getBlock(chunk, x, y, z);
+                        if (broken_block.block.placed) {
+                            var placed_block = getBlock(placedBlocks, x, y, z);
+                            placedBlocks.splice(placed_block.index, 1); // 2nd parameter means remove one item only
+                        } else { //normal block
+                            brokenBlocks.push(broken_block.block);
+                        }
+                        terrain[chunk_index].splice(broken_block.index, 1);
+                        rebuild_mesh();
+                    }
+                }
             });
             controls.addEventListener('lock', function () {});
-            controls.addEventListener('unlock', function () {});
+            controls.addEventListener('unlock', function () {keys = []});
 
-            var loader = new THREE.TextureLoader();
 
             var inc = 0.05;
             var amplitude = 10 + Math.random() * 10;
             const BLOCK_SIZE = 2;
             const PLAYER_REACH = 4 * BLOCK_SIZE;
-            const RENDER_DISTANCE = 9;
+            const RENDER_DISTANCE = 2;
             const CHUNK_SIZE = 16;
-
+            var loader = new THREE.TextureLoader();
             var materialArray = [
                 new THREE.MeshBasicMaterial({map : loader.load("assets/textures/dirt-face.jpg")}),
                 new THREE.MeshBasicMaterial({map : loader.load("assets/textures/dirt-face.jpg")}),
@@ -162,13 +275,13 @@
                     dir: [  0,  0,  1*BLOCK_SIZE, "front"],
                 },
             ];
-
             class Block {
-                constructor(x, y, z) {
+                constructor(x, y, z, placed) {
                     this.x = x;
                     this.y = y;
                     this.z = z;
                     this.blocks_around = [];
+                    this.placed = placed;
                 }
 
                 getXYZ() {
@@ -237,7 +350,7 @@
                                 xoff = inc * x;
                                 zoff = inc * z;
                                 var y = Math.round(noise.perlin2(xoff, zoff) * amplitude / BLOCK_SIZE) * BLOCK_SIZE;
-                                chunk.push(new Block(x * BLOCK_SIZE, y, z * BLOCK_SIZE));
+                                chunk.push(new Block(x * BLOCK_SIZE, y, z * BLOCK_SIZE, false));
                                 let matrix = new THREE.Matrix4().makeTranslation(x * BLOCK_SIZE, y, z * BLOCK_SIZE);
                                 instancedChunk.setMatrixAt(count, matrix);
                                 ++count;
@@ -250,24 +363,18 @@
 
                 return chunks;
             }
-
             terrain = generate();
+            var placedBlocks = [];
+            var chunkMap = [];
+            for (var x = 0; x < RENDER_DISTANCE; ++x) {
+                for (var z = 0; z < RENDER_DISTANCE; ++z) {
+                    chunkMap.push({x: x, z: z});
+                }
+            }
 
-            window.addEventListener("resize", function() {
-                renderer.setSize(window.innerWidth, window.innerHeight);
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-                cursor.style.left = ((0.5 * window.innerWidth) - (0.5 * cursor.width)).toString() + "px";
- 			    cursor.style.top = ((0.5 * window.innerHeight) - (0.5 * cursor.height)).toString() + "px";
-            });
 
-            const raycaster = new THREE.Raycaster();
-            const pointer = new THREE.Vector2();
-            pointer.x = 0;
-            pointer.y = 0;
-
-            var plane;
             function render() {
+                var plane;
                 raycaster.setFromCamera(pointer, camera);
                 var intersection = raycaster.intersectObject(instancedChunk);
                 if (intersection[0] && intersection[0].distance < PLAYER_REACH) {
@@ -348,7 +455,8 @@
 
                 renderer.render(scene, camera);
             }
-            
+
+
             function update() {
                 if (keys.includes(controlsKeys.forward)) {
                     controls.moveForward(movingSpeed);
@@ -488,31 +596,13 @@
                         for (var x = xoffset; x < xoffset + CHUNK_SIZE * BLOCK_SIZE; x+=BLOCK_SIZE) {
                             zoffset = lowestXZ.z - CHUNK_SIZE * BLOCK_SIZE;
                             for (var z = zoffset; z < lowestXZ.z; z+=BLOCK_SIZE) {
-                                xoff = inc * x / BLOCK_SIZE;
-                                zoff = inc * z / BLOCK_SIZE;
-                                var y = Math.round(noise.perlin2(xoff, zoff) * amplitude / BLOCK_SIZE) * BLOCK_SIZE;
-                                chunk.push(new Block(x, y, z));
+                                update_mesh(chunk, x, z);
                             }
                         }
                         new_chunks.splice(i * RENDER_DISTANCE, 0, chunk);
                     }
                     terrain = new_chunks;
-                    scene.remove(instancedChunk);
-                    // reconstruct instanced mesh
-                    instancedChunk = new THREE.InstancedMesh(blockBox, materialArray, total_meshes);
-                    var count = 0;
-                    for (var chunk = 0; chunk < terrain.length; ++chunk) {
-                        for (var block = 0; block < terrain[chunk].length; ++block) {
-                            let matrix = new THREE.Matrix4().makeTranslation(
-                                terrain[chunk][block].x,
-                                terrain[chunk][block].y,
-                                terrain[chunk][block].z
-                            );
-                            instancedChunk.setMatrixAt(count, matrix);
-                            ++count;
-                        }
-                    }
-                    scene.add(instancedChunk);
+                    rebuild_mesh();
                 }
                 var highestXZ = highestBlock();
                 /*
@@ -549,31 +639,13 @@
                         for (var x = xoffset; x < xoffset + CHUNK_SIZE * BLOCK_SIZE; x+=BLOCK_SIZE) {
                             zoffset = highestXZ.z + BLOCK_SIZE;
                             for (var z = zoffset; z < zoffset + CHUNK_SIZE * BLOCK_SIZE; z+=BLOCK_SIZE) {
-                                xoff = inc * x / BLOCK_SIZE;
-                                zoff = inc * z / BLOCK_SIZE;
-                                var y = Math.round(noise.perlin2(xoff, zoff) * amplitude / BLOCK_SIZE) * BLOCK_SIZE;
-                                chunk.push(new Block(x, y, z));
+                                update_mesh(chunk, x, z);
                             }
                         }
                         new_chunks.splice((i + 1) * RENDER_DISTANCE - 1, 0, chunk);
                     }
                     terrain = new_chunks;
-                    scene.remove(instancedChunk);
-                    // reconstruct instanced mesh
-                    instancedChunk = new THREE.InstancedMesh(blockBox, materialArray, total_meshes);
-                    var count = 0;
-                    for (var chunk = 0; chunk < terrain.length; ++chunk) {
-                        for (var block = 0; block < terrain[chunk].length; ++block) {
-                            let matrix = new THREE.Matrix4().makeTranslation(
-                                terrain[chunk][block].x,
-                                terrain[chunk][block].y,
-                                terrain[chunk][block].z
-                            );
-                            instancedChunk.setMatrixAt(count, matrix);
-                            ++count;
-                        }
-                    }
-                    scene.add(instancedChunk);
+                    rebuild_mesh();
                 }
                 var highestXZ = highestBlock();
                 /*
@@ -608,31 +680,13 @@
                         for (var z = zoffset; z < zoffset + CHUNK_SIZE * BLOCK_SIZE; z+=BLOCK_SIZE) {
                             xoffset = highestXZ.x + BLOCK_SIZE;
                             for (var x = xoffset; x < xoffset + CHUNK_SIZE * BLOCK_SIZE; x+=BLOCK_SIZE) {
-                                xoff = inc * x / BLOCK_SIZE;
-                                zoff = inc * z / BLOCK_SIZE;
-                                var y = Math.round(noise.perlin2(xoff, zoff) * amplitude / BLOCK_SIZE) * BLOCK_SIZE;
-                                chunk.push(new Block(x, y, z));
+                                update_mesh(chunk, x, z);
                             }
                         }
                         new_chunks.splice(terrain.length - (RENDER_DISTANCE - i), 0, chunk);
                     }
                     terrain = new_chunks;
-                    scene.remove(instancedChunk);
-                    // reconstruct instanced mesh
-                    instancedChunk = new THREE.InstancedMesh(blockBox, materialArray, total_meshes);
-                    var count = 0;
-                    for (var chunk = 0; chunk < terrain.length; ++chunk) {
-                        for (var block = 0; block < terrain[chunk].length; ++block) {
-                            let matrix = new THREE.Matrix4().makeTranslation(
-                                terrain[chunk][block].x,
-                                terrain[chunk][block].y,
-                                terrain[chunk][block].z
-                            );
-                            instancedChunk.setMatrixAt(count, matrix);
-                            ++count;
-                        }
-                    }
-                    scene.add(instancedChunk);
+                    rebuild_mesh();
                 }
                 var lowestXZ = lowestBlock();
                 /*
@@ -666,37 +720,18 @@
                         for (var z = zoffset; z < zoffset + CHUNK_SIZE * BLOCK_SIZE; z+=BLOCK_SIZE) {
                             xoffset = lowestXZ.x - CHUNK_SIZE * BLOCK_SIZE;
                             for (var x = xoffset; x < lowestXZ.x; x+=BLOCK_SIZE) {
-                                xoff = inc * x / BLOCK_SIZE;
-                                zoff = inc * z / BLOCK_SIZE;
-                                var y = Math.round(noise.perlin2(xoff, zoff) * amplitude / BLOCK_SIZE) * BLOCK_SIZE;
-                                chunk.push(new Block(x, y, z));
+                                update_mesh(chunk, x, z);
                             }
                         }
                         new_chunks.splice(i, 0, chunk);
                     }
                     terrain = new_chunks;
-                    scene.remove(instancedChunk);
-                    // reconstruct instanced mesh
-                    instancedChunk = new THREE.InstancedMesh(blockBox, materialArray, total_meshes);
-                    var count = 0;
-                    for (var chunk = 0; chunk < terrain.length; ++chunk) {
-                        for (var block = 0; block < terrain[chunk].length; ++block) {
-                            let matrix = new THREE.Matrix4().makeTranslation(
-                                terrain[chunk][block].x,
-                                terrain[chunk][block].y,
-                                terrain[chunk][block].z
-                            );
-                            instancedChunk.setMatrixAt(count, matrix);
-                            ++count;
-                        }
-                    }
-                    scene.add(instancedChunk);
+                    rebuild_mesh();
                 }
             }
 
             const arrayMin = (arr) => arr.reduce(([min], val) => [Math.min(min, val)], [Number.POSITIVE_INFINITY]);
             const arrayMax = (arr) => arr.reduce(([max], val) => [Math.max(max, val)], [Number.NEGATIVE_INFINITY]);
-
             function lowestBlock() {
                 var xPosArray = [];
                 var zPosArray = [];
@@ -711,7 +746,6 @@
 
                 return {'x': min_x[0], 'z': min_z[0]};
             }
-
             function highestBlock() {
                 var xPosArray = [];
                 var zPosArray = [];
@@ -726,6 +760,79 @@
                 max_z = arrayMax(zPosArray);
 
                 return {'x': max_x[0], 'z': max_z[0]};
+            }
+
+            function add_player_structures(chunk, x, z) {
+                // Check if there is also a placed block there
+                for (var block = 0; block < placedBlocks.length; ++block) {
+                    placed_block = placedBlocks[block]
+                    if (placed_block.x == x && placed_block.z == z) {
+                        chunk.push(new Block(placed_block.x, placed_block.y, placed_block.z, true));
+                    }
+                }
+            }
+
+            function identifyChunk(x, z) {
+                var lowestXZ = lowestBlock();
+                var difX = x - lowestXZ.x;
+                var difZ = z - lowestXZ.z;
+                var divX = Math.floor(difX / (CHUNK_SIZE * BLOCK_SIZE));
+                var divZ = Math.floor(difZ / (CHUNK_SIZE * BLOCK_SIZE));
+                var index = undefined;
+                var i = 0;
+                while (index == undefined && i < chunkMap.length) {
+                    if (chunkMap[i].x == divX && chunkMap[i].z == divZ) {
+                        index = i;
+                    }
+                    ++i;
+                }
+
+                return index;
+            }
+
+            function getBlock(space, x, y, z) {
+                var looked_block = undefined;
+                var block = 0;
+                while (looked_block == undefined && block < space.length) {
+                    block_pos = space[block].getXYZ();
+                    if (block_pos.x == x && block_pos.y == y && block_pos.z == z) {
+                        looked_block = space[block];
+                    } else {
+                        ++block;
+                    }
+                }
+
+                return {'block': looked_block, 'index': block};
+            }
+
+            function update_mesh(chunk, x, z) {
+                var xoff = inc * x / BLOCK_SIZE;
+                var zoff = inc * z / BLOCK_SIZE;
+                var y = Math.round(noise.perlin2(xoff, zoff) * amplitude / BLOCK_SIZE) * BLOCK_SIZE;
+                var broken_block = getBlock(brokenBlocks, x, y, z);
+                if (broken_block.block == undefined) {
+                    chunk.push(new Block(x, y, z, false));
+                }
+                add_player_structures(chunk, x, z);
+            }
+
+            function rebuild_mesh() {
+                scene.remove(instancedChunk);
+                var placed_meshes = placedBlocks.length;
+                instancedChunk = new THREE.InstancedMesh(blockBox, materialArray, total_meshes + placed_meshes);
+                var count = 0;
+                for (var chunk = 0; chunk < terrain.length; ++chunk) {
+                    for (var block = 0; block < terrain[chunk].length; ++block) {
+                        let matrix = new THREE.Matrix4().makeTranslation(
+                            terrain[chunk][block].x,
+                            terrain[chunk][block].y,
+                            terrain[chunk][block].z
+                        );
+                        instancedChunk.setMatrixAt(count, matrix);
+                        ++count;
+                    }
+                }
+                scene.add(instancedChunk);
             }
 
             function gameloop() {
