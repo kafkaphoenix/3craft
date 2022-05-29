@@ -22,7 +22,7 @@
 		</style>
     </head>
     <body>
-        <button id="autoJumpButton" onclick="toggleAutoJump()">Auto Jump: On</button>
+        <button id="autoJumpButton" onclick="toggleAutoJump()">Auto Jump: Off</button>
         <button id="canFlyButton" onclick="toggleCanFly()">Can Fly: Off</button>
         <script src="js/vendor/three.js"></script>
         <script src="js/vendor/stats.js"></script>
@@ -49,12 +49,12 @@
             const scene = new THREE.Scene();
             scene.background = new THREE.Color(0x00ffff);
  		    scene.fog = new THREE.Fog(0x00ffff, 10, 650);
-            var fov = 90;
+            const FOV = 90;
             var aspect_ratio = window.innerWidth / window.innerHeight;
             var near_clipping = 0.1;
             var far_clipping = 1000;
             var camera = new THREE.PerspectiveCamera(
-                fov,
+                FOV,
                 aspect_ratio,
                 near_clipping,
                 far_clipping
@@ -70,16 +70,78 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
 
+            const RENDER_DISTANCE = 4;
+            const CHUNK_SIZE = 16;
+            const BLOCK_SIZE = 5;
+            const WORLD_SIZE = CHUNK_SIZE * RENDER_DISTANCE * BLOCK_SIZE;
+            //center the camera
+            camera.position.x = RENDER_DISTANCE * CHUNK_SIZE / 10;
+            camera.position.z = RENDER_DISTANCE * CHUNK_SIZE / 10;
+            camera.position.y = 50;
+            const RENDER_RATIO = 0.4;
 
+            const PLAYER_REACH = 4 * BLOCK_SIZE;
             const FLY_MOVING_SPEED = 3;
-            const MOVING_SPEED = 0.7;
+            const MOVING_SPEED = 0.8;
             const JUMP_HEIGHT = -1;
+            const PLAYER_WIDTH = 0.6;
+            const PLAYER_HEIGHT = 8;
+            const PLAYER_DEPTH = 0.5;
+            const SPRINT_SPEED = 1.5;
             var movingSpeed = MOVING_SPEED;
             var gravity_effect = 0;
             var gravity = 0.065;
-            var autoJump = true;
+            class Player {
+                constructor(x, y, z, w, h, d) {
+                    this.x = x;
+                    this.y = y;
+                    this.z = z;
+                    this.width = w;
+                    this.height = h;
+                    this.depth = d;
+                }
+
+                forward(speed) {
+                    controls.moveForward(speed);
+                    this.updatePosition();
+                }
+
+                backward(speed) {
+                    controls.moveForward(-1 * speed);
+                    this.updatePosition();
+                }
+
+                right(speed) {
+                    controls.moveRight(speed);
+                    this.updatePosition();
+                }
+
+                left(speed) {
+                    controls.moveRight(-1 * speed);
+                    this.updatePosition();
+			    }
+
+                updatePosition() {
+                    this.x = camera.position.x;
+                    this.y = camera.position.y - (this.height / 2);
+                    this.z = camera.position.z;
+                }
+
+            }
+            var player = new Player(
+                camera.position.x,
+                camera.position.y,
+                camera.position.z,
+                PLAYER_WIDTH,
+                PLAYER_HEIGHT,
+                PLAYER_DEPTH
+            );
+
+
+            var autoJump = false;
             var canJump = true;
             var canFly = false;
+            var sprint = false;
             var keys = [];
             var SPACE = ' ';
             var controlsKeys = {
@@ -88,8 +150,9 @@
                 right: 'd',
                 left: 'a',
                 jump: SPACE,
-                placeBlock: 'q'
-            }
+                placeBlock: 'q',
+                run: 'r'
+            };
             function toggleAutoJump() {
                 autoJump = !autoJump;
                 text = autoJump ? "Auto Jump: On":"Auto Jump: Off";
@@ -109,6 +172,10 @@
             pointer.x = (0.5) * 2 - 1;
             pointer.y = -1 * (0.5) * 2 + 1;
             document.addEventListener("keydown", function(e) {
+                if (e.key == controlsKeys.run) {
+                    sprint = !sprint;
+                }
+
                 keys.push(e.key);
                 if (e.key == controlsKeys.jump && canJump) {
                     gravity_effect = JUMP_HEIGHT;
@@ -159,9 +226,15 @@
                         }
                         y = Math.round(y); // sometimes, y is for some reason e.g 4.999999999999
                         var new_block = new Block(x, y, z, true);
-                        placedBlocks.push(new_block);
-                        terrain[identifyChunk(x, z)].push(new_block);
-                        rebuild_mesh();
+                        var is_intersecting = intersect(
+                            new_block.x, new_block.y, new_block.z, BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE,
+                            player.x, player.y, player.z, player.width, player.height, player.depth
+                        );
+                        if (!is_intersecting) {
+                            placedBlocks.push(new_block);
+                            terrain[identifyChunk(x, z)].push(new_block);
+                            rebuild_mesh();
+                        }
                     }
                 }
             });
@@ -237,15 +310,11 @@
                 }
             });
             controls.addEventListener('lock', function () {});
-            controls.addEventListener('unlock', function () {keys = []});
+            controls.addEventListener('unlock', function () {keys = [];});
 
 
             var inc = 0.05;
-            var amplitude = 10 + Math.random() * 10;
-            const BLOCK_SIZE = 2;
-            const PLAYER_REACH = 4 * BLOCK_SIZE;
-            const RENDER_DISTANCE = 2;
-            const CHUNK_SIZE = 16;
+            var amplitude = 30 + Math.random() * 30;
             var loader = new THREE.TextureLoader();
             var materialArray = [
                 new THREE.MeshBasicMaterial({map : loader.load("assets/textures/dirt-face.jpg")}),
@@ -337,10 +406,6 @@
                 var xoff = 0;
                 var zoff = 0;
                 var chunk = [];
-                //center the camera
-                camera.position.x = RENDER_DISTANCE * CHUNK_SIZE / 2 * BLOCK_SIZE;
-                camera.position.z = RENDER_DISTANCE * CHUNK_SIZE / 2 * BLOCK_SIZE;
-                camera.position.y = 50;
                 var count = 0;
                 for (var i = 0; i < RENDER_DISTANCE; ++i) {
                     for (var j = 0; j < RENDER_DISTANCE; ++j) {
@@ -372,9 +437,8 @@
                 }
             }
 
-
+            var plane;
             function render() {
-                var plane;
                 raycaster.setFromCamera(pointer, camera);
                 var intersection = raycaster.intersectObject(instancedChunk);
                 if (intersection[0] && intersection[0].distance < PLAYER_REACH) {
@@ -457,74 +521,131 @@
             }
 
 
+            var deceleration = 1.35;
+            var forback = 0; // 1 = forward, -1 = backward
+		    var rightleft = 0; // 1 = right, -1 = left
             function update() {
+                player.updatePosition();
                 if (keys.includes(controlsKeys.forward)) {
-                    controls.moveForward(movingSpeed);
+                    var velocity = movingSpeed * (sprint ? SPRINT_SPEED : 1);
+                    player.forward(velocity);
+                    forback = 1 * movingSpeed;
                     if (!autoJump) {
                         for (var chunk = 0; chunk < terrain.length; ++chunk) {
                             for (var block = 0; block < terrain[chunk].length; ++block) {
-                                if (camera.position.x <= terrain[chunk][block].x + BLOCK_SIZE / 2 && 
-                                    camera.position.x >= terrain[chunk][block].x - BLOCK_SIZE / 2 && 
-                                    camera.position.z <= terrain[chunk][block].z + BLOCK_SIZE / 2 && 
-                                    camera.position.z >= terrain[chunk][block].z - BLOCK_SIZE / 2) {
-                                    if (camera.position.y <= terrain[chunk][block].y - BLOCK_SIZE / 2) {
-                                        controls.moveForward(-1 * movingSpeed);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                if (keys.includes(controlsKeys.left)) {
-                    controls.moveRight(-1 * movingSpeed);
-                    if (!autoJump) {
-                        for (var chunk = 0; chunk < terrain.length; ++chunk) {
-                            for (var block = 0; block < terrain[chunk].length; ++block) {
-                                if (camera.position.x <= terrain[chunk][block].x + BLOCK_SIZE / 2 && 
-                                    camera.position.x >= terrain[chunk][block].x - BLOCK_SIZE / 2 && 
-                                    camera.position.z <= terrain[chunk][block].z + BLOCK_SIZE / 2 && 
-                                    camera.position.z >= terrain[chunk][block].z - BLOCK_SIZE / 2) {
-                                    if (camera.position.y <= terrain[chunk][block].y - BLOCK_SIZE / 2) {
-                                        controls.moveRight(movingSpeed);
-                                    }
+                                var check_block = terrain[chunk][block];
+                                var condition = (check_block.y - (BLOCK_SIZE / 2) < player.y + (player.height / 2) && check_block.y + (BLOCK_SIZE / 2) > player.y - (player.height / 2));
+                                var is_intersecting = intersect(
+                                    check_block.x, check_block.y, check_block.z, BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE,
+                                    player.x, player.y, player.z, player.width, player.height, player.depth
+                                );
+                                if (is_intersecting && condition) {
+                                    player.backward(velocity);
+                                    forback = 0;
+                                    rightleft = 0;
+                                    sprint = false;
                                 }
                             }
                         }
                     }
                 }
                 if (keys.includes(controlsKeys.backward)) {
-                    controls.moveForward(-1 * movingSpeed);
+                    var velocity = movingSpeed * (sprint ? SPRINT_SPEED : 1);
+                    player.backward(velocity);
+                    forback = -1 * movingSpeed;
                     if (!autoJump) {
                         for (var chunk = 0; chunk < terrain.length; ++chunk) {
                             for (var block = 0; block < terrain[chunk].length; ++block) {
-                                if (camera.position.x <= terrain[chunk][block].x + BLOCK_SIZE / 2 && 
-                                    camera.position.x >= terrain[chunk][block].x - BLOCK_SIZE / 2 && 
-                                    camera.position.z <= terrain[chunk][block].z + BLOCK_SIZE / 2 && 
-                                    camera.position.z >= terrain[chunk][block].z - BLOCK_SIZE / 2) {
-                                    if (camera.position.y <= terrain[chunk][block].y - BLOCK_SIZE / 2) {
-                                        controls.moveForward(movingSpeed);
-                                    }
+                                var check_block = terrain[chunk][block];
+                                var condition = (check_block.y - (BLOCK_SIZE / 2) < player.y + (player.height / 2) && check_block.y + (BLOCK_SIZE / 2) > player.y - (player.height / 2));
+                                var is_intersecting = intersect(
+                                    check_block.x, check_block.y, check_block.z, BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE,
+                                    player.x, player.y, player.z, player.width, player.height, player.depth
+                                );
+                                if (is_intersecting && condition) {
+                                    player.forward(velocity);
+                                    forback = 0;
+                                    rightleft = 0;
+                                    sprint = false;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (keys.includes(controlsKeys.left)) {
+                    var velocity = movingSpeed * (sprint ? SPRINT_SPEED : 1);
+                    player.left(velocity);
+                    rightleft = -1 * movingSpeed;
+                    if (!autoJump) {
+                        for (var chunk = 0; chunk < terrain.length; ++chunk) {
+                            for (var block = 0; block < terrain[chunk].length; ++block) {
+                                var check_block = terrain[chunk][block];
+                                var condition = (check_block.y - (BLOCK_SIZE / 2) < player.y + (player.height / 2) && check_block.y + (BLOCK_SIZE / 2) > player.y - (player.height / 2));
+                                var is_intersecting = intersect(
+                                    check_block.x, check_block.y, check_block.z, BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE,
+                                    player.x, player.y, player.z, player.width, player.height, player.depth
+                                );
+                                if (is_intersecting && condition) {
+                                    player.right(velocity);
+                                    forback = 0;
+                                    rightleft = 0;
+                                    sprint = false;
                                 }
                             }
                         }
                     }
                 }
                 if (keys.includes(controlsKeys.right)) {
-                    controls.moveRight(movingSpeed);
+                    var velocity = movingSpeed * (sprint ? SPRINT_SPEED : 1);
+                    player.right(velocity);
+                    rightleft = 1 * movingSpeed;
                     if (!autoJump) {
                         for (var chunk = 0; chunk < terrain.length; ++chunk) {
                             for (var block = 0; block < terrain[chunk].length; ++block) {
-                                if (camera.position.x <= terrain[chunk][block].x + BLOCK_SIZE / 2 && 
-                                    camera.position.x >= terrain[chunk][block].x - BLOCK_SIZE / 2 && 
-                                    camera.position.z <= terrain[chunk][block].z + BLOCK_SIZE / 2 && 
-                                    camera.position.z >= terrain[chunk][block].z - BLOCK_SIZE / 2) {
-                                    if (camera.position.y <= terrain[chunk][block].y - BLOCK_SIZE / 2) {
-                                        controls.moveRight(-1 * movingSpeed);
-                                    }
+                                var check_block = terrain[chunk][block];
+                                var condition = (check_block.y - (BLOCK_SIZE / 2) < player.y + (player.height / 2) && check_block.y + (BLOCK_SIZE / 2) > player.y - (player.height / 2));
+                                var is_intersecting = intersect(
+                                    check_block.x, check_block.y, check_block.z, BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE,
+                                    player.x, player.y, player.z, player.width, player.height, player.depth
+                                );
+                                if (is_intersecting && condition) {
+                                    player.left(velocity);
+                                    forback = 0;
+                                    rightleft = 0;
+                                    sprint = false;
                                 }
                             }
                         }
                     }
+                }
+
+                // Deceleration part
+                if (!keys.includes(controlsKeys.forward) && !keys.includes(controlsKeys.backward) && !keys.includes(controlsKeys.right) && !keys.includes(controlsKeys.left)) {
+                    forback /= deceleration;
+                    rightleft /= deceleration;
+                    var br = false;
+                    for (var chunk = 0; chunk < terrain.length; ++chunk) {
+                        for (var block = 0; block < terrain[chunk].length; ++block) {
+                            var check_block = terrain[chunk][block];
+                            var condition = (check_block.y - (BLOCK_SIZE / 2) < player.y + (player.height / 2) && check_block.y + (BLOCK_SIZE / 2) > player.y - (player.height / 2));
+                            var is_intersecting = intersect(
+                                check_block.x, check_block.y, check_block.z, BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE,
+                                player.x, player.y, player.z, player.width, player.height, player.depth
+                            );
+                            if(is_intersecting && condition){
+                                br = true;
+                                forback /= -deceleration;
+                                rightleft /= -deceleration;
+                                sprint = false;
+                                break;
+                            }
+                        }
+                        if(br){
+                            break;
+                        }
+                    }
+                    player.forward(forback * (sprint ? SPRINT_SPEED : 1));
+                    player.right(rightleft * (sprint ? SPRINT_SPEED : 1));
                 }
 
                 if (!canFly) {
@@ -538,29 +659,34 @@
 
                 for (var chunk = 0; chunk < terrain.length; ++chunk) {
                     for (var block = 0; block < terrain[chunk].length; ++block) {
-                        // camera colliding player top of the block horizontal detection
                         // BLOCK_SIZE / 2 instead of BLOCK_SIZE because three js axis in the center of the block
-                        if (camera.position.x <= terrain[chunk][block].x + BLOCK_SIZE / 2 && 
-                            camera.position.x >= terrain[chunk][block].x - BLOCK_SIZE / 2 && 
-                            camera.position.z <= terrain[chunk][block].z + BLOCK_SIZE / 2 && 
-                            camera.position.z >= terrain[chunk][block].z - BLOCK_SIZE / 2) {
-                            // player under the top vertical detection
-                            if (camera.position.y <= terrain[chunk][block].y + 2 * BLOCK_SIZE &&
-                                camera.position.y >= terrain[chunk][block].y) {
-                                camera.position.y = terrain[chunk][block].y + 2 * BLOCK_SIZE;
+                        // player falling through a block
+                        var check_block = terrain[chunk][block];
+                        var below_block = camera.position.y <= check_block.y + BLOCK_SIZE / 2 + player.height && camera.position.y >= check_block.y;
+                        var is_intersecting = intersect(
+                            check_block.x, check_block.y + 2 * BLOCK_SIZE, check_block.z, BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE,
+                            player.x, player.y, player.z, player.width, player.height, player.depth
+                        );
+                        if (is_intersecting && below_block) {
+                                // set player above terrain
+                                camera.position.y = check_block.y + (BLOCK_SIZE / 2) + player.height;
                                 if (!canFly) {
                                     gravity_effect = 0;
                                     canJump = true;
-                                    break;
                                 }
                             }
+                        // player jump and head touch the ceiling
+                        var is_intersecting = intersect(
+                            check_block.x, check_block.y, check_block.z, BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE,
+                            player.x, player.y, player.z, player.width, player.height, player.depth
+                        );
+                        var above_block = camera.position.y >= check_block.y - (BLOCK_SIZE / 2) && camera.position.y <= check_block.y;
+                        if (is_intersecting && above_block) {
+                            gravity_effect = 0.8; // go down to avoid
                         }
                     }
                 }
 
-                const worldSize = CHUNK_SIZE * RENDER_DISTANCE * BLOCK_SIZE;
-                const ratio = 0.4;
-                var lowestXZ = lowestBlock();
                 /*
                     render distance 3 means 9 chunks
                     looking from above +y
@@ -570,7 +696,8 @@
                      z [2][5][8]
                 */
                 // remove chunks left behind decreasing z forward North
-                if (camera.position.z <= lowestXZ.z + worldSize * ratio) {
+                var lowestXZ = lowestBlock();
+                if (camera.position.z < lowestXZ.z + WORLD_SIZE * RENDER_RATIO) {
                     /*
                         [0][3][6]
                         [1][p][7]
@@ -592,9 +719,9 @@
                     var lowestXZ = lowestBlock();
                     for (var i = 0; i < RENDER_DISTANCE; ++i) {
                         var chunk = [];
-                        xoffset = lowestXZ.x + i * CHUNK_SIZE * BLOCK_SIZE;
+                        var xoffset = lowestXZ.x + i * CHUNK_SIZE * BLOCK_SIZE;
                         for (var x = xoffset; x < xoffset + CHUNK_SIZE * BLOCK_SIZE; x+=BLOCK_SIZE) {
-                            zoffset = lowestXZ.z - CHUNK_SIZE * BLOCK_SIZE;
+                            var zoffset = lowestXZ.z - CHUNK_SIZE * BLOCK_SIZE;
                             for (var z = zoffset; z < lowestXZ.z; z+=BLOCK_SIZE) {
                                 update_mesh(chunk, x, z);
                             }
@@ -604,7 +731,6 @@
                     terrain = new_chunks;
                     rebuild_mesh();
                 }
-                var highestXZ = highestBlock();
                 /*
                        -x     x
                     -z [0][3][6]
@@ -612,7 +738,8 @@
                      z [2][5][8]
                 */
                 // remove chunks left behind increasing z backward South
-                if (camera.position.z >= highestXZ.z - worldSize * ratio) {
+                var highestXZ = highestBlock();
+                if (camera.position.z > highestXZ.z - WORLD_SIZE * RENDER_RATIO) {
                     /*
                         [1][p][7]
                         [2][5][8]
@@ -635,9 +762,9 @@
                     var highestXZ = highestBlock();
                     for (var i = 0; i < RENDER_DISTANCE; ++i) {
                         var chunk = [];
-                        xoffset = lowestXZ.x + i * CHUNK_SIZE * BLOCK_SIZE;
+                        var xoffset = lowestXZ.x + i * CHUNK_SIZE * BLOCK_SIZE;
                         for (var x = xoffset; x < xoffset + CHUNK_SIZE * BLOCK_SIZE; x+=BLOCK_SIZE) {
-                            zoffset = highestXZ.z + BLOCK_SIZE;
+                            var zoffset = highestXZ.z + BLOCK_SIZE;
                             for (var z = zoffset; z < zoffset + CHUNK_SIZE * BLOCK_SIZE; z+=BLOCK_SIZE) {
                                 update_mesh(chunk, x, z);
                             }
@@ -647,7 +774,6 @@
                     terrain = new_chunks;
                     rebuild_mesh();
                 }
-                var highestXZ = highestBlock();
                 /*
                        -x     x
                     -z [0][3][6]
@@ -655,7 +781,8 @@
                      z [2][5][8]
                 */
                 // remove chunks left behind increasing x right East
-                if (camera.position.x >= highestXZ.x - worldSize * ratio) {
+                var highestXZ = highestBlock();
+                if (camera.position.x > highestXZ.x - WORLD_SIZE * RENDER_RATIO) {
                     /*
                         [3][6]
                         [p][7]
@@ -676,9 +803,9 @@
                     var highestXZ = highestBlock();
                     for (var i = 0; i < RENDER_DISTANCE; ++i) {
                         var chunk = [];
-                        zoffset = lowestXZ.z + i * CHUNK_SIZE * BLOCK_SIZE;
+                        var zoffset = lowestXZ.z + i * CHUNK_SIZE * BLOCK_SIZE;
                         for (var z = zoffset; z < zoffset + CHUNK_SIZE * BLOCK_SIZE; z+=BLOCK_SIZE) {
-                            xoffset = highestXZ.x + BLOCK_SIZE;
+                            var xoffset = highestXZ.x + BLOCK_SIZE;
                             for (var x = xoffset; x < xoffset + CHUNK_SIZE * BLOCK_SIZE; x+=BLOCK_SIZE) {
                                 update_mesh(chunk, x, z);
                             }
@@ -688,7 +815,6 @@
                     terrain = new_chunks;
                     rebuild_mesh();
                 }
-                var lowestXZ = lowestBlock();
                 /*
                        -x     x
                     -z [0][3][6]
@@ -696,7 +822,8 @@
                      z [2][5][8]
                 */
                 // remove chunks left behind increasing x left West
-                if (camera.position.x <= lowestXZ.x + worldSize * ratio) {
+                var lowestXZ = lowestBlock();
+                if (camera.position.x < lowestXZ.x + WORLD_SIZE * RENDER_RATIO) {
                     /*
                         [0][3]
                         [1][p]
@@ -716,9 +843,9 @@
                     var lowestXZ = lowestBlock();
                     for (var i = 0; i < RENDER_DISTANCE; ++i) {
                         var chunk = [];
-                        zoffset = lowestXZ.z + i * CHUNK_SIZE * BLOCK_SIZE;
+                        var zoffset = lowestXZ.z + i * CHUNK_SIZE * BLOCK_SIZE;
                         for (var z = zoffset; z < zoffset + CHUNK_SIZE * BLOCK_SIZE; z+=BLOCK_SIZE) {
-                            xoffset = lowestXZ.x - CHUNK_SIZE * BLOCK_SIZE;
+                            var xoffset = lowestXZ.x - CHUNK_SIZE * BLOCK_SIZE;
                             for (var x = xoffset; x < lowestXZ.x; x+=BLOCK_SIZE) {
                                 update_mesh(chunk, x, z);
                             }
@@ -765,7 +892,7 @@
             function add_player_structures(chunk, x, z) {
                 // Check if there is also a placed block there
                 for (var block = 0; block < placedBlocks.length; ++block) {
-                    placed_block = placedBlocks[block]
+                    placed_block = placedBlocks[block];
                     if (placed_block.x == x && placed_block.z == z) {
                         chunk.push(new Block(placed_block.x, placed_block.y, placed_block.z, true));
                     }
@@ -834,6 +961,28 @@
                 }
                 scene.add(instancedChunk);
             }
+
+            function intersect(x1, y1, z1, w1, h1, d1, x2, y2, z2, w2, h2, d2){
+                var a = {
+                    minX : x1 - (w1/2),
+                    maxX : x1 + (w1/2),
+                    minZ : z1 - (d1/2),
+                    maxZ : z1 + (d1/2),
+                    minY : y1 - (h1/2),
+                    maxY : y1 + (h1/2),
+                };
+                var b = {
+                    minX : x2 - (w2/2),
+                    maxX : x2 + (w2/2),
+                    minZ : z2 - (d2/2),
+                    maxZ : z2 + (d2/2),
+                    minY : y2 - (h2/2),
+                    maxY : y2 + (h2/2),
+                };
+                return (a.minX <= b.maxX && a.maxX >= b.minX) &&
+                    (a.minY <= b.maxY && a.maxY >= b.minY) &&
+                    (a.minZ <= b.maxZ && a.maxZ >= b.minZ);
+		    }
 
             function gameloop() {
                 requestAnimationFrame(gameloop);
